@@ -148,6 +148,58 @@
         let currentUrl = null;
         let is3DRunning = true; 
         
+        // =========================================================================
+        // HỆ THỐNG GỬI THỐNG KÊ TRUY CẬP & THỜI GIAN THỰC HÀNH VỀ GOOGLE SHEETS
+        // =========================================================================
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxmUeHpP2dSgi4zHeMZT_GS2RHM_Yi-HFznL40OK9EkfGCGmpY3GjwDrrma6Vr1_eYj/exec";
+        
+        const LAB_NAMES = {
+            1: "Bài 1: Thí nghiệm kéo thép mềm",
+            2: "Bài 2: Xác định mô đun đàn hồi E",
+            3: "Bài 3: Xác định mô đun đàn hồi trượt G",
+            4: "Bài 4: Đo ứng suất dầm chịu uốn thuần tuý",
+            5: "Bài 5: Đo độ võng, góc quay dầm uốn ngang phẳng"
+        };
+
+        let activeSession = null; // Lưu thông tin phiên thực hành hiện tại
+
+        // Hàm gửi dữ liệu ngầm sang Google Sheets (Chống lỗi CORS trên GitHub Pages)
+        function sendTrackingData(payload) {
+            try {
+                fetch(GOOGLE_SCRIPT_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    keepalive: true, // Đảm bảo vẫn gửi thành công ngay cả khi sinh viên tắt tab
+                    headers: {
+                        "Content-Type": "text/plain;charset=utf-8"
+                    },
+                    body: JSON.stringify(payload)
+                });
+            } catch (err) {
+                console.error("Lỗi gửi thống kê:", err);
+            }
+        }
+
+        // Hàm kết thúc phiên học và tính thời gian thực hành
+        function endCurrentLabSession() {
+            if (!activeSession) return;
+            const durationSec = Math.max(1, Math.round((Date.now() - activeSession.startTime) / 1000));
+            sendTrackingData({
+                action: "end",
+                sessionId: activeSession.sessionId,
+                hoten: activeSession.hoten,
+                lop: activeSession.lop,
+                nhom: activeSession.nhom,
+                baithigio: activeSession.baithigio,
+                durationSec: durationSec
+            });
+            activeSession = null;
+        }
+
+        // Bắt sự kiện khi sinh viên đóng tab hoặc tải lại trang khi đang làm bài
+        window.addEventListener("pagehide", endCurrentLabSession);
+        window.addEventListener("beforeunload", endCurrentLabSession);
+        
         function openLab(id) {
             const student = document.getElementById('inp-student').value.trim();
             const cls = document.getElementById('inp-class').value.trim();
@@ -167,6 +219,25 @@
                 return;
             }
             msg.classList.add('hidden');
+
+            // ---> KÍCH HOẠT GHI NHẬN LƯỢT TRUY CẬP MỚI <---
+            const sessionId = "SES_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+            activeSession = {
+                sessionId: sessionId,
+                startTime: Date.now(),
+                hoten: student,
+                lop: cls,
+                nhom: group,
+                baithigio: LAB_NAMES[id] || ("Bài " + id)
+            };
+            sendTrackingData({
+                action: "start",
+                sessionId: activeSession.sessionId,
+                hoten: activeSession.hoten,
+                lop: activeSession.lop,
+                nhom: activeSession.nhom,
+                baithigio: activeSession.baithigio
+            });
 
             const overlay = document.getElementById('fade-overlay');
             overlay.classList.remove('opacity-0');
@@ -234,6 +305,9 @@
         }
 
         function goHome() {
+            // ---> CẬP NHẬT THỜI LƯỢNG THỰC HÀNH KHI QUAY VỀ TRANG CHỦ <---
+            endCurrentLabSession();
+
             const overlay = document.getElementById('fade-overlay');
             overlay.classList.remove('opacity-0');
             overlay.classList.add('opacity-100');
